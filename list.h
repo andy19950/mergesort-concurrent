@@ -3,10 +3,12 @@
 
 #include <stdint.h>
 
-typedef intptr_t val_t;
+#define MAX_LAST_NAME_SIZE 16
+
+typedef char* val_t;
 
 typedef struct node {
-    val_t data;
+    val_t data[MAX_LAST_NAME_SIZE];
     struct node *next;
 } node_t;
 

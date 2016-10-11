@@ -1,13 +1,14 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "list.h"
-
+#define output_file "output.txt"
 static node_t *node_new(val_t val, node_t *next)
 {
     /* allocate node */
     node_t *node = malloc(sizeof(node_t));
-    node->data = val;
+    strcpy(node->data, val);
     node->next = next;
     return node;
 }
@@ -51,11 +52,11 @@ node_t *list_nth(llist_t *list, uint32_t idx)
 void list_print(llist_t *list)
 {
     node_t *cur = list->head;
-    /* FIXME: we have to validate the sorted results in advance. */
-    printf("\nsorted results:\n");
+    FILE *fp = fopen(output_file, "w");
+    //printf("\nsorted results in output file: %s\n", output_file);
     while (cur) {
-        printf("[%ld] ", cur->data);
+        fprintf(fp,"%s\n", cur->data);
         cur = cur->next;
     }
-    printf("\n");
+    fclose(fp);
 }
