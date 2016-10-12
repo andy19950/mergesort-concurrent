@@ -15,8 +15,6 @@ int task_free(task_t *the_task);
 
 typedef struct {
     task_t *head, *tail;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
     uint32_t size;
 } tqueue_t;
 
@@ -34,5 +32,4 @@ typedef struct {
 
 int tpool_init(tpool_t *the_pool, uint32_t count, void *(*func)(void *));
 int tpool_free(tpool_t *the_pool);
-
 #endif
