@@ -10,15 +10,10 @@
 #define USAGE "usage: ./sort [thread_count] [file_name]\n"
 #define BUF_SIZ 512
 
-struct {
-    pthread_mutex_t mutex;
-    int cut_thread_count;
-} data_context;
-
 static llist_t *tmp_list;
 static llist_t *the_list = NULL;
-
-static int thread_count = 0, data_count = 0, max_cut = 0;
+static uint32_t now = 0;
+static int thread_count = 0, data_count = 0, max_cut = 0, cut_thread_count = 0;
 static tpool_t *pool = NULL;
 
 llist_t *merge_list(llist_t *a, llist_t *b)
@@ -56,7 +51,7 @@ llist_t *merge_sort(llist_t *list)
 {
     if (list->size < 2)
         return list;
-    int mid = list->size / 2;
+    int mid = list->size >> 1;
     llist_t *left = list;
     llist_t *right = list_new();
     right->head = list_nth(list, mid);
@@ -70,24 +65,22 @@ void merge(void *data)
 {
     llist_t *_list = (llist_t *) data;
     if (_list->size < (uint32_t) data_count) {
-        pthread_mutex_lock(&(data_context.mutex));
         llist_t *_t = tmp_list;
         if (!_t) {
             tmp_list = _list;
-            pthread_mutex_unlock(&(data_context.mutex));
         } else {
             tmp_list = NULL;
-            pthread_mutex_unlock(&(data_context.mutex));
             task_t *_task = (task_t *) malloc(sizeof(task_t));
             _task->func = merge;
             _task->arg = merge_list(_list, _t);
-            tqueue_push(pool->queue, _task);
+            tqueue_push(pool->queue + now++%thread_count, _task);
         }
     } else {
         the_list = _list;
         task_t *_task = (task_t *) malloc(sizeof(task_t));
         _task->func = NULL;
-        tqueue_push(pool->queue, _task);
+        for(int i=0; i<pool->count; i++)
+            tqueue_push(pool->queue + i, _task);
         list_print(_list);
     }
 }
@@ -95,14 +88,12 @@ void merge(void *data)
 void cut_func(void *data)
 {
     llist_t *list = (llist_t *) data;
-    pthread_mutex_lock(&(data_context.mutex));
-    int cut_count = data_context.cut_thread_count;
+    int cut_count = thread_count;
     if (list->size > 1 && cut_count < max_cut) {
-        ++data_context.cut_thread_count;
-        pthread_mutex_unlock(&(data_context.mutex));
+        ++cut_thread_count;
 
         /* cut list */
-        int mid = list->size / 2;
+        int mid = list->size >> 1;
         llist_t *_list = list_new();
         _list->head = list_nth(list, mid);
         _list->size = list->size - mid;
@@ -112,28 +103,29 @@ void cut_func(void *data)
         /* create new task: left */
         task_t *_task = (task_t *) malloc(sizeof(task_t));
         _task->func = cut_func;
-        _task->arg = _list;
-        tqueue_push(pool->queue, _task);
+        _task->arg = list;
+        tqueue_push(pool->queue + now++%thread_count, _task);
 
         /* create new task: right */
         _task = (task_t *) malloc(sizeof(task_t));
         _task->func = cut_func;
-        _task->arg = list;
-        tqueue_push(pool->queue, _task);
+        _task->arg = _list;
+        tqueue_push(pool->queue + now++%thread_count, _task);
+
+
     } else {
-        pthread_mutex_unlock(&(data_context.mutex));
         merge(merge_sort(list));
     }
 }
 
 static void *task_run(void *data)
 {
-    (void) data;
+    tqueue_t *_queue = (tqueue_t *) data;
     while (1) {
-        task_t *_task = tqueue_pop(pool->queue);
+        task_t *_task = tqueue_pop(_queue);
         if (_task) {
             if (!_task->func) {
-                tqueue_push(pool->queue, _task);
+                tqueue_push(_queue, _task);
                 break;
             } else {
                 _task->func(_task->arg);
@@ -150,11 +142,10 @@ void data_correctness()
     result = fopen("output.txt", "r");
     answer = fopen("words.txt", "r");
     char a[BUF_SIZ], b[BUF_SIZ];
-    while(fgets(a, sizeof(a), answer) != NULL){
+    while(fgets(a, sizeof(a), answer) != NULL) {
         fgets(b, sizeof(b), result);
         assert(!strcmp(a, b) && "ERROR : Some name is not in the linked-list!!");
     }
-    //printf("CORRECT : Every name is in the linked-list!!\n");
     fclose(result);
     fclose(answer);
 }
@@ -177,7 +168,7 @@ int main(int argc, char const *argv[])
 {
     char *input_file, line[BUF_SIZ];
     FILE *fp;
-    struct timespec start, end;   
+    struct timespec start, end;
     double cpu_time;
 
     if (argc < 3) {
@@ -187,7 +178,7 @@ int main(int argc, char const *argv[])
     thread_count = atoi(argv[1]);
     input_file = argv[2];
     fp = fopen(input_file, "r");
-
+    srand(time(NULL));
     max_cut = thread_count * (thread_count <= data_count) +
               data_count * (thread_count > data_count) - 1;
 
@@ -199,8 +190,6 @@ int main(int argc, char const *argv[])
     }
 
     /* initialize tasks inside thread pool */
-    pthread_mutex_init(&(data_context.mutex), NULL);
-    data_context.cut_thread_count = 0;
     tmp_list = NULL;
     pool = (tpool_t *) malloc(sizeof(tpool_t));
     tpool_init(pool, thread_count, task_run);
@@ -210,8 +199,8 @@ int main(int argc, char const *argv[])
     task_t *_task = (task_t *) malloc(sizeof(task_t));
     _task->func = cut_func;
     _task->arg = the_list;
-    tqueue_push(pool->queue, _task);
-    
+    tqueue_push(pool->queue + now++%thread_count, _task);
+
     /* release thread pool */
     tpool_free(pool);
     clock_gettime(CLOCK_REALTIME, &end);
