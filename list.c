@@ -4,6 +4,7 @@
 
 #include "list.h"
 #define output_file "output.txt"
+
 static node_t *node_new(val_t val, node_t *next)
 {
     /* allocate node */
